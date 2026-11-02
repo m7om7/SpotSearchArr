@@ -13,7 +13,6 @@ server {
     # NZB downloaden
     location = /nzb {
         proxy_pass http://spottarr:8383/newznab/api?t=get&apikey=${NEWZNAB_APIKEY}&guid=$arg_guid;
-        add_header Content-Disposition 'attachment; filename="spot-$arg_guid.nzb"';
     }
 
     location / {
