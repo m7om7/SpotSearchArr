@@ -42,7 +42,7 @@ article h2{font:600 18px/1.35 ui-serif,Georgia,serif;margin:0 0 4px;overflow-wra
 <div class="bar" id="bar" hidden>
   <span id="chips"></span><span class="grow"></span>
   <label>Sorteer <select id="sort"><option value="date">Nieuwste eerst</option><option value="size">Grootste eerst</option><option value="title">Titel A–Z</option></select></label>
-  <div id="filters"><select id="fl"></select><select id="fs"></select><select id="fse"></select><select id="fep"></select></div>
+  <div id="filters"><select id="fl"></select><select id="fs"></select><select id="fse"></select><select id="fep"></select><select id="fy"></select><button type="button" id="fclear" hidden>Wis filters</button></div>
 </div>
 <div id="status"></div>
 <div id="list"></div>
@@ -52,7 +52,7 @@ const NS='http://www.newznab.com/DTD/2010/feeds/attributes/';
 const CATS={1:'Console',2:'Film',3:'Audio',4:'PC',5:'TV',6:'XXX',7:'Boek',8:'Overig'};
 const TAAL={Dutch:'Nederlands',English:'Engels',German:'Duits',French:'Frans',Spanish:'Spaans'};
 const $=s=>document.querySelector(s);
-const F={cat:null,lang:'',subs:'',season:'',ep:''};
+const F={cat:null,lang:'',subs:'',season:'',ep:'',year:''};
 let items=[];
 
 const catName=c=>CATS[Math.floor(c/1000)]||'Overig';
@@ -113,7 +113,7 @@ async function search(q){
     if(x.querySelector('parsererror'))throw new Error('Antwoord is geen geldige XML');
     if(x.documentElement.nodeName==='error')throw new Error(x.documentElement.getAttribute('description')||'Fout van Spottarr');
     items=[...x.getElementsByTagName('item')].map(parse);
-    Object.assign(F,{cat:null,lang:'',subs:'',season:'',ep:''});
+    Object.assign(F,{cat:null,lang:'',subs:'',season:'',ep:'',year:''});
     render();
   }catch(e){st.className='err';st.textContent='Zoeken mislukt: '+e.message+'. Controleer of Spottarr draait en de API-key klopt.';$('#bar').hidden=true}
 }
@@ -142,8 +142,10 @@ function render(){
   fill($('#fl'),'lang','Alle talen',all('langs').sort(),taal);
   const subLangs=all('subs').sort();
   fill($('#fs'),'subs','Alle ondertitels',subLangs.length?['*',...subLangs]:[],v=>v==='*'?'Met ondertitels':'Ondertitel: '+taal(v));
-  fill($('#fse'),'season','Alle seizoenen',all('seasons').sort(num),v=>'Seizoen '+p2(v));
-  fill($('#fep'),'ep','Alle afleveringen',uniq(items.flatMap(i=>i.eps)).sort(num).map(String),v=>'Aflevering '+p2(v));
+  const film=F.cat==='Film';
+  fill($('#fse'),'season','Alle seizoenen',film?[]:all('seasons').sort(num),v=>'Seizoen '+p2(v));
+  fill($('#fep'),'ep','Alle afleveringen',film?[]:uniq(items.flatMap(i=>i.eps)).sort(num).map(String),v=>'Aflevering '+p2(v));
+  fill($('#fy'),'year','Alle jaren',film?uniq(items.filter(i=>catName(i.main)==='Film'&&i.year).map(i=>i.year)).sort().reverse():[]);
 
   const sort=$('#sort').value;
   const shown=items.filter(i=>
@@ -151,8 +153,10 @@ function render(){
     (!F.lang||i.langs.includes(F.lang))&&
     (!F.subs||(F.subs==='*'?i.subs.length>0:i.subs.includes(F.subs)))&&
     (!F.season||i.seasons.includes(F.season))&&
-    (!F.ep||i.eps.includes(Number(F.ep)))
+    (!F.ep||i.eps.includes(Number(F.ep)))&&
+    (!F.year||i.year===F.year)
   ).sort((a,b)=>sort==='size'?b.size-a.size:sort==='title'?a.title.localeCompare(b.title,'nl'):new Date(b.date)-new Date(a.date));
+  $('#fclear').hidden=!(F.cat||F.lang||F.subs||F.season||F.ep||F.year);
   st.textContent=shown.length+' van '+items.length+' resultaten';
 
   for(const i of shown){
@@ -176,7 +180,8 @@ function render(){
 
 $('#f').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q)};
 $('#sort').onchange=render;
-[['#fl','lang'],['#fs','subs'],['#fse','season'],['#fep','ep']].forEach(([id,k])=>{$(id).onchange=e=>{F[k]=e.target.value;render()}});
+$('#fclear').onclick=()=>{Object.assign(F,{cat:null,lang:'',subs:'',season:'',ep:'',year:''});render()};
+[['#fl','lang'],['#fs','subs'],['#fse','season'],['#fep','ep'],['#fy','year']].forEach(([id,k])=>{$(id).onchange=e=>{F[k]=e.target.value;render()}});
 </script>
 </body>
 </html>
