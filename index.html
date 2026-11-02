@@ -25,19 +25,24 @@ article{background:var(--card);border:1px solid var(--bd);border-left:4px solid 
 article h2{font:600 18px/1.35 ui-serif,Georgia,serif;margin:0 0 4px;overflow-wrap:anywhere}
 .meta{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--mut);font-size:13px}
 .badge{background:var(--chip);color:var(--ac);padding:1px 8px;border-radius:99px;font-weight:600}
-.desc{margin:8px 0 0;font-size:14px;color:var(--mut);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;overflow-wrap:anywhere}
+.desc{margin:8px 0 0;font-size:14px;color:var(--mut);white-space:pre-line;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;overflow-wrap:anywhere}
 .desc.open{-webkit-line-clamp:unset;display:block}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tag{border:1px solid var(--bd);border-radius:6px;padding:1px 8px;font-size:13px}
+.tag b{font-weight:600}
+#filters{display:flex;flex-wrap:wrap;gap:8px;width:100%}
 .act{margin-top:10px}
 .act a{display:inline-block;background:var(--ac);color:var(--on);text-decoration:none;font-weight:600;font-size:14px;padding:6px 14px;border-radius:8px}
 </style>
 </head>
 <body>
 <main>
-<h1>Spottarr zoeken</h1>
+<h1>SpottArr Search</h1>
 <form id="f"><input id="q" type="search" placeholder="Zoek op titel, bijv. Dune 2024" autofocus required><button>Zoeken</button></form>
 <div class="bar" id="bar" hidden>
   <span id="chips"></span><span class="grow"></span>
   <label>Sorteer <select id="sort"><option value="date">Nieuwste eerst</option><option value="size">Grootste eerst</option><option value="title">Titel A–Z</option></select></label>
+  <div id="filters"><select id="fl"></select><select id="fs"></select><select id="fse"></select><select id="fep"></select></div>
 </div>
 <div id="status"></div>
 <div id="list"></div>
@@ -45,12 +50,34 @@ article h2{font:600 18px/1.35 ui-serif,Georgia,serif;margin:0 0 4px;overflow-wra
 <script>
 const NS='http://www.newznab.com/DTD/2010/feeds/attributes/';
 const CATS={1:'Console',2:'Film',3:'Audio',4:'PC',5:'TV',6:'XXX',7:'Boek',8:'Overig'};
+const TAAL={Dutch:'Nederlands',English:'Engels',German:'Duits',French:'Frans',Spanish:'Spaans'};
 const $=s=>document.querySelector(s);
-let items=[],cat=null;
+const F={cat:null,lang:'',subs:'',season:'',ep:''};
+let items=[];
 
 const catName=c=>CATS[Math.floor(c/1000)]||'Overig';
+const taal=t=>TAAL[t]||t;
+const p2=n=>isNaN(n)?n:String(Number(n)).padStart(2,'0');
+const split=a=>(a||[]).join(',').split(',').map(s=>s.trim()).filter(Boolean);
+const uniq=a=>[...new Set(a)];
+const num=(a,b)=>Number(a)-Number(b);
 const fmtSize=b=>{if(!b)return'';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<4){b/=1024;i++}return b.toFixed(i>1?1:0)+' '+u[i]};
 const fmtDate=d=>d?new Date(d).toLocaleDateString('nl-NL',{day:'numeric',month:'short',year:'numeric'}):'';
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+
+const cleanTitle=t=>uniq(t.split(/\s+\|\s+/).map(x=>x.trim()).filter(Boolean)).join(' | ');
+const cleanDesc=s=>s.replace(/\[\/?[a-z]+(=[^\]]*)?\]/gi,'').replace(/\*{2,}/g,'\n').replace(/[=_\-~#]{4,}/g,'\n')
+  .replace(/[ \t]+/g,' ').replace(/ ?\n ?/g,'\n').replace(/\n{2,}/g,'\n').trim();
+
+function epLabel(i){
+  const s=i.seasons.map(n=>'S'+p2(n)).join(' ');
+  const e=i.eps;let es='';
+  if(e.length){
+    const run=e.length>1&&e.every((n,k)=>k===0||n===e[k-1]+1);
+    es=run?'E'+p2(e[0])+'–E'+p2(e[e.length-1]):e.map(n=>'E'+p2(n)).join(' ');
+  }
+  return [s,es].filter(Boolean).join(' ');
+}
 
 function parse(it){
   const t=n=>(it.getElementsByTagName(n)[0]?.textContent||'').trim();
@@ -60,15 +87,18 @@ function parse(it){
   }
   const cats=(a.category||[]).map(Number);
   return{
-    title:t('title')||'(zonder titel)',
-    desc:t('description').replace(/_{5,}/g,' · ').replace(/\s+/g,' ').trim(),
+    title:cleanTitle(t('title'))||'(zonder titel)',
+    desc:cleanDesc(t('description')),
     guid:(a.guid||[])[0],
     size:Number((a.size||[])[0])||0,
     date:t('pubDate'),
-    cats,
     main:cats.find(c=>c%1000===0)??cats[0]??8000,
     poster:(a.poster||[])[0],
-    year:(a.year||[])[0]
+    year:(a.year||[])[0],
+    langs:uniq(split(a.language)),
+    subs:uniq(split(a.subs)),
+    seasons:uniq(split(a.season)).sort(num),
+    eps:uniq(split(a.episode).map(Number).filter(n=>!isNaN(n))).sort(num)
   };
 }
 
@@ -83,8 +113,16 @@ async function search(q){
     if(x.querySelector('parsererror'))throw new Error('Antwoord is geen geldige XML');
     if(x.documentElement.nodeName==='error')throw new Error(x.documentElement.getAttribute('description')||'Fout van Spottarr');
     items=[...x.getElementsByTagName('item')].map(parse);
-    cat=null;render();
+    Object.assign(F,{cat:null,lang:'',subs:'',season:'',ep:''});
+    render();
   }catch(e){st.className='err';st.textContent='Zoeken mislukt: '+e.message+'. Controleer of Spottarr draait en de API-key klopt.';$('#bar').hidden=true}
+}
+
+function fill(sel,key,label,vals,fmt=x=>x){
+  sel.replaceChildren(new Option(label,''));
+  vals.forEach(v=>sel.append(new Option(fmt(v),v)));
+  sel.value=vals.includes(F[key])?F[key]:'';F[key]=sel.value;
+  sel.hidden=!vals.length;
 }
 
 function render(){
@@ -92,37 +130,53 @@ function render(){
   list.replaceChildren();
   $('#bar').hidden=!items.length;
   if(!items.length){st.textContent='Geen resultaten. Probeer minder of andere woorden.';return}
+
   const counts={};items.forEach(i=>{const n=catName(i.main);counts[n]=(counts[n]||0)+1});
   const chips=$('#chips');chips.replaceChildren();
   [['Alles',null],...Object.keys(counts).map(n=>[n+' ('+counts[n]+')',n])].forEach(([label,val])=>{
-    const b=document.createElement('button');b.type='button';b.textContent=label;
-    b.className='chip'+(cat===val?' on':'');b.style.marginRight='6px';
-    b.onclick=()=>{cat=val;render()};chips.append(b);
+    const b=el('button','chip'+(F.cat===val?' on':''),label);b.type='button';b.style.marginRight='6px';
+    b.onclick=()=>{F.cat=val;render()};chips.append(b);
   });
+
+  const all=k=>uniq(items.flatMap(i=>i[k]));
+  fill($('#fl'),'lang','Alle talen',all('langs').sort(),taal);
+  const subLangs=all('subs').sort();
+  fill($('#fs'),'subs','Alle ondertitels',subLangs.length?['*',...subLangs]:[],v=>v==='*'?'Met ondertitels':'Ondertitel: '+taal(v));
+  fill($('#fse'),'season','Alle seizoenen',all('seasons').sort(num),v=>'Seizoen '+p2(v));
+  fill($('#fep'),'ep','Alle afleveringen',uniq(items.flatMap(i=>i.eps)).sort(num).map(String),v=>'Aflevering '+p2(v));
+
   const sort=$('#sort').value;
-  const shown=items.filter(i=>!cat||catName(i.main)===cat).sort((a,b)=>
-    sort==='size'?b.size-a.size:sort==='title'?a.title.localeCompare(b.title,'nl'):new Date(b.date)-new Date(a.date));
-  st.textContent=shown.length+' resultaten';
+  const shown=items.filter(i=>
+    (!F.cat||catName(i.main)===F.cat)&&
+    (!F.lang||i.langs.includes(F.lang))&&
+    (!F.subs||(F.subs==='*'?i.subs.length>0:i.subs.includes(F.subs)))&&
+    (!F.season||i.seasons.includes(F.season))&&
+    (!F.ep||i.eps.includes(Number(F.ep)))
+  ).sort((a,b)=>sort==='size'?b.size-a.size:sort==='title'?a.title.localeCompare(b.title,'nl'):new Date(b.date)-new Date(a.date));
+  st.textContent=shown.length+' van '+items.length+' resultaten';
+
   for(const i of shown){
-    const el=document.createElement('article');
-    const h=document.createElement('h2');h.textContent=i.title;
-    const m=document.createElement('div');m.className='meta';
-    const badge=document.createElement('span');badge.className='badge';badge.textContent=catName(i.main);
-    m.append(badge);
-    [fmtSize(i.size),fmtDate(i.date),i.year,i.poster&&'door '+i.poster].filter(Boolean).forEach(s=>{
-      const sp=document.createElement('span');sp.textContent=s;m.append(sp)});
-    el.append(h,m);
-    if(i.desc){const d=document.createElement('p');d.className='desc';d.textContent=i.desc;d.title='Klik om uit te klappen';
-      d.onclick=()=>d.classList.toggle('open');el.append(d)}
-    if(i.guid){const w=document.createElement('div');w.className='act';
-      const a=document.createElement('a');a.href='nzb?guid='+encodeURIComponent(i.guid);a.textContent='Download NZB';
-      w.append(a);el.append(w)}
-    list.append(el);
+    const a=el('article');
+    const m=el('div','meta');
+    m.append(el('span','badge',catName(i.main)));
+    [fmtSize(i.size),fmtDate(i.date),i.year,i.poster&&'door '+i.poster].filter(Boolean).forEach(s=>m.append(el('span',null,s)));
+    a.append(el('h2',null,i.title),m);
+    const tags=el('div','tags');
+    const ep=epLabel(i);
+    const tag=(k,v)=>{const t=el('span','tag');t.append(el('b',null,k+' '),document.createTextNode(v));tags.append(t)};
+    if(ep)tag('Aflevering',ep);
+    if(i.langs.length)tag('Taal',i.langs.map(taal).join(', '));
+    if(i.subs.length)tag('Ondertitels',i.subs.map(taal).join(', '));
+    if(tags.children.length)a.append(tags);
+    if(i.desc){const d=el('p','desc',i.desc);d.title='Klik om uit te klappen';d.onclick=()=>d.classList.toggle('open');a.append(d)}
+    if(i.guid){const w=el('div','act');const l=el('a',null,'Download NZB');l.href='nzb?guid='+encodeURIComponent(i.guid);w.append(l);a.append(w)}
+    list.append(a);
   }
 }
 
 $('#f').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q)};
 $('#sort').onchange=render;
+[['#fl','lang'],['#fs','subs'],['#fse','season'],['#fep','ep']].forEach(([id,k])=>{$(id).onchange=e=>{F[k]=e.target.value;render()}});
 </script>
 </body>
 </html>
