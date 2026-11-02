@@ -1,0 +1,18 @@
+services:
+  spottarr-zoeken:
+    image: ghcr.io/m7om7/spotsearcharr:latest
+    container_name: spottarr-zoeken
+    restart: unless-stopped
+    expose:
+      - 80
+    environment:
+      - "NEWZNAB_APIKEY=<jouw-newznab-apikey>"
+    networks:
+      - pangolin_frontend
+      - aiostreams
+
+networks:
+  pangolin_frontend:
+    external: true
+  aiostreams:
+    external: true
