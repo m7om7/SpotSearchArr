@@ -10,6 +10,11 @@ server {
         proxy_pass http://spottarr:8383/newznab/api?t=search&apikey=${NEWZNAB_APIKEY}&q=$arg_q;
     }
 
+    # Meest recente spots (zoeken zonder zoekterm)
+    location = /recent {
+        proxy_pass http://spottarr:8383/newznab/api?t=search&apikey=${NEWZNAB_APIKEY};
+    }
+
     # NZB downloaden
     location = /nzb {
         proxy_pass http://spottarr:8383/newznab/api?t=get&apikey=${NEWZNAB_APIKEY}&guid=$arg_guid;
